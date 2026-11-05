@@ -1,67 +1,67 @@
 # gwas-candidate-annotation
 
-An end-to-end Skill that takes GWAS significant signals to candidate-gene experimental prioritization. Designed for downstream analysis of crop resequencing GWAS; validated on an autotetraploid crop and equally applicable to diploids.
+从 GWAS 显著信号到候选基因实验优先级的端到端 Skill。面向作物重测序 GWAS 下游分析，同源四倍体作物实测验证，二倍体同样适用。
 
-## What this Skill does
+## 这个 Skill 做什么
 
-Input: GWAS results (rMVP/GAPIT-style signals.csv / summary statistics / ann.vcf). Output:
+输入 GWAS 结果（rMVP/GAPIT 风格的 signals.csv / summary statistics / ann.vcf），输出：
 
-1. **Dual-model lead SNP list**: signals significant at the same position in two models (e.g., MLM + FarmCPU) → clustered into independent loci → one lead SNP per locus;
-2. **Candidate gene table**: genes within a ±100 kb window of each lead SNP (from GFF);
-3. **Candidate gene identity**: CDS extraction → protein translation → multi-database BLASTp (same species / close relatives / model plants / self-proteome) → domain and pathway annotation;
-4. **Cloning feasibility assessment**: TE association detection (RVT/rve domains, fragmented hits), polyploid homolog copy inventory (prerequisite for copy-specific primers), and hormone-rescue gating (allowed only when the gene identity belongs to the corresponding hormone pathway).
+1. **双模型 lead SNP 清单**：两个模型（如 MLM+FarmCPU）同位置显著 → 聚类成独立位点 → 每位点取 lead SNP；
+2. **候选基因表**：lead SNP ±100 kb 窗口基因（GFF）；
+3. **候选基因身份**：CDS 提取→蛋白翻译→多库 BLASTp（同种/近缘/模式植物/自蛋白组）→ 功能域与通路注释；
+4. **克隆可行性判定**：TE 关联判别（RVT/rve 结构域、碎片化命中）、多倍体同源拷贝盘点（拷贝特异引物前提）、激素回复门控（基因身份属于激素通路才允许）。
 
-## Quick start (10-minute walkthrough)
+## 快速上手（10 分钟跑通）
 
 ```bash
-# 1. Dual-model lead screening (once per trait)
+# 1. 双模型 lead 筛选（每性状一次）
 python scripts/screen_dual_model_leads.py \
-    --signals-a trait.MLM_signals.csv --signals-b trait.FarmCPU_signals.csv \
+    --signals-a 性状.MLM_signals.csv --signals-b 性状.FarmCPU_signals.csv \
     --model-a MLM --model-b FarmCPU \
-    --gff reference.gff.gz --trait trait_name --outdir out/trait_name/
+    --gff 参考基因组.gff.gz --trait 性状名 --outdir out/性状名/
 
-# 2. Extract candidate-gene CDS + proteins (--proteome builds a whole proteome for copy inventory)
-python scripts/extract_cds_protein.py --gff reference.gff.gz \
-    --genome genome.fasta.gz --genes gene1 gene2 --outdir out/anno/ --proteome
+# 2. 提取候选基因 CDS + 蛋白（--proteome 建全蛋白组供拷贝盘点）
+python scripts/extract_cds_protein.py --gff 参考基因组.gff.gz \
+    --genome 基因组.fasta.gz --genes 基因1 基因2 --outdir out/anno/ --proteome
 
-# 3. Multi-database BLASTp (requires local NCBI BLAST+; dbs.tsv format: database_name<TAB>protein_fasta_path)
+# 3. 多库 BLASTp（需本地 NCBI BLAST+；dbs.tsv 格式：库名<TAB>蛋白fasta路径）
 python scripts/run_blastp.py --query out/anno/candidate_proteins.fasta \
     --dbs dbs.tsv --outdir out/anno/
 python scripts/summarize_annotation.py --blastdir out/anno/blast_out \
-    --outdir out/anno/ --self-db <self-proteome-db-name>
+    --outdir out/anno/ --self-db <自蛋白组库名>
 
-# 4. Write per-gene conclusions following the Stage 4 decision table in SKILL.md
+# 4. 按 SKILL.md Stage 4 判定表逐基因写结论
 ```
 
-## Directory structure
+## 目录结构
 
 ```
 gwas-candidate-annotation/
-├── SKILL.md                      Main document (YAML header + four-stage workflow + decision table)
-├── README.md                     This file
+├── SKILL.md                      主文档（YAML 头 + 四阶段流程 + 判定表）
+├── README.md                     本文件
 ├── scripts/
-│   ├── screen_dual_model_leads.py   Dual-model lead SNP screening + window genes
-│   ├── extract_cds_protein.py       CDS/protein extraction + whole-proteome construction
-│   ├── run_blastp.py                Multi-database BLASTp (automatic database construction)
-│   └── summarize_annotation.py      BLAST summary + homolog copy table
+│   ├── screen_dual_model_leads.py   双模型 lead SNP 筛选 + 窗口基因
+│   ├── extract_cds_protein.py       CDS/蛋白提取 + 全蛋白组构建
+│   ├── run_blastp.py                多库 BLASTp（自动建库）
+│   └── summarize_annotation.py      比对汇总 + 同源拷贝表
 └── references/
-    ├── workflow.md               Full workflow details + a validated plant-height trait case study (de-identified)
-    ├── data_boundary.md          Interpretation boundaries and reporting language for truncated GWAS data
-    └── pitfalls.md               Empirically verified pitfalls in polyploid cloning, TE detection, and tool environments
+    ├── workflow.md               完整流程细节 + 株高性状实测案例（已脱敏）
+    ├── data_boundary.md          截断 GWAS 数据的解释边界与汇报口径
+    └── pitfalls.md               多倍体克隆/TE 判别/工具环境的实证坑
 ```
 
-## Dependencies
+## 依赖
 
-- Python 3.9+ (standard library only)
-- NCBI BLAST+ (blastp / makeblastdb; native Windows or Linux)
-- Optional: HMMER (hmmscan) for Pfam domain scanning; when unavailable, inherit InterPro annotations from orthologs
+- Python 3.9+（仅标准库）
+- NCBI BLAST+（blastp / makeblastdb；Windows 原生或 Linux）
+- 可选：HMMER（hmmscan）用于 Pfam 结构域扫描；不可用时继承直系同源 InterPro 注释
 
-## Three hard rules (see references/ for details)
+## 三条铁律（详版见 references/）
 
-1. **Coordinate system isolation**: use exactly one reference genome version per analysis; mixing versions is prohibited;
-2. **Statistical significance ≠ clonability**: TE association (RVT/rve), fragmented hits, and zero-expression orthologs → all downgraded to KASP marker validation;
-3. **Hormone-rescue gating**: a hormone-rescue experiment may be designed only when the annotated gene identity clearly belongs to that hormone pathway; defaulting by trait is prohibited ("plant height → GA" is a wrong default).
+1. **坐标系隔离**：一个分析只用一个参考基因组版本，禁止混用；
+2. **统计显著 ≠ 可克隆**：TE 关联（RVT/rve）、碎片化命中、零表达直系同源 → 一律降级为 KASP 位点验证；
+3. **激素回复门控**：基因注释身份明确属于该激素通路才可设计激素回复实验，禁止按性状默认（"株高→GA"是错误默认）。
 
-## Validation source
+## 实测来源
 
-The workflow was distilled from a real downstream resequencing GWAS analysis in an autotetraploid crop (three quantitative traits × three association models, population size 200+, vendor-truncated delivery scenario). It includes complete annotation and tiered interpretation of two missense candidate genes (one highly conserved metabolic enzyme → clonable; one reverse transcriptase-related, likely TE-derived → downgraded). Specific gene identities and project data are not included in this Skill; see the internal records of the user's project for details.
+流程提炼自一套同源四倍体作物的真实重测序 GWAS 下游分析（3 个数量性状 × 3 种关联模型，群体规模 200+，供应商截断交付场景），包含两个错义候选基因的完整注释与分级判读（一个高度保守的代谢酶 → 可克隆；一个逆转录酶相关疑似 TE 衍生 → 降级）。具体基因身份与项目数据未包含在本 Skill 中，详见使用者所在项目的内部记录。
