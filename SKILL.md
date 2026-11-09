@@ -1,83 +1,81 @@
 ---
-name: gwas-candidate-annotation
-description: 从 GWAS 显著信号（含供应商截断交付的 P 值截断数据）到候选基因同源注释的端到端流程：双模型 lead SNP 交叉筛选、GFF 窗口候选基因提取、CDS/蛋白提取与翻译、多库 BLASTp 同源注释、多倍体同源拷贝盘点、转座子(TE)风险判别与实验优先级建议（克隆/KASP/激素回复门控）。当用户拿到重测序 GWAS 结果（rMVP/GAPIT/GLM/MLM/FarmCPU 的 signals 或 summary statistics）需要筛选高置信位点、注释候选基因身份、评估克隆价值或设计过表达/KASP/激素回复验证实验时使用。适用于多倍体（含同源四倍体）作物，同样适用于二倍体。
-agent_created: true
+name: gwas-candidate-annotation-v3
+description: 从植物 GWAS 关联结果生成候选位点、候选基因、同源候选、证据等级、实验优先级和可视化报告。适用于完整或供应商截断的 summary statistics、GFF、基因组 FASTA、BLAST 蛋白库、结构域表和 VCF LD 数据。只输出 Priority A/B/C/D 与 Evidence L0-L4，不宣称因果基因确认。
 ---
 
-# GWAS 候选基因筛选与同源注释
+# gwas-candidate-annotation V3
 
-## 用途
+## 使用边界
 
-将 GWAS 关联信号转化为**可实验验证的候选基因清单**，并给出每个基因的克隆/验证优先级。覆盖四个阶段：双模型位点筛选 → 候选基因提取 → 同源注释（BLASTp）→ 实验路线建议。
+1. 必须显式声明 `data_mode: full` 或 `data_mode: truncated`。
+2. 完整 summary 必须在双模型交集前按各自显著性阈值过滤。
+3. 距离聚类只能称 `distance_cluster`；未经 LD 或条件分析，不得称独立位点或独立 QTL。
+4. 主模型 lead SNP 与跨模型支持分开报告。
+5. REF/ALT、多等位冲突、效应方向冲突和参考基因组版本不一致均为阻断错误。
+6. BLAST Top hit 只能写 `homology_candidate`；self-BLAST 只能写 `homoeolog_candidate`。不得写直系同源或真实拷贝数。
+7. TE/repeat 风险触发克隆降级；激素回复只在注释通路与目标激素明确匹配时允许。
+8. 输出只能是候选优先级和证据等级，不写“确认因果基因”。
 
-## 何时使用
+## 输入契约
 
-- 拿到 GWAS 结果（signals.csv / summary statistics / ann.vcf），需要找主效位点与候选基因；
-- 需要回答"这个候选基因是什么、值不值得克隆"（TE 关联？拷贝数？功能域？）；
-- 需要为多倍体候选基因评估同源拷贝并设计拷贝特异克隆引物；
-- 需要判断候选基因是否适用于激素回复实验（必须属于对应激素通路）。
+YAML 配置示例字段：
 
-## 执行流程（四阶段）
-
-按序执行，每阶段产物作为下一阶段输入。脚本均在 `scripts/` 下，纯 Python 3 标准库（仅 BLAST 需本地 BLAST+）。
-
-### Stage 1 — 双模型 lead SNP 筛选
-
-```bash
-python scripts/screen_dual_model_leads.py \
-    --signals-a <trait>.MLM_signals.csv --signals-b <trait>.FarmCPU_signals.csv \
-    --model-a MLM --model-b FarmCPU \
-    --gff <reference>.gff.gz --trait <TraitName> --outdir out/<trait>/
+```yaml
+scenario: demo
+base_dir: ./inputs
+trait: plant_height
+data_mode: full
+reference_build: ZM4_V2_hap1
+random_seed: 20261109
+model_a:
+  name: MLM
+  path: height.MLM.csv
+  p_threshold: 5.0e-8
+model_b:
+  name: FarmCPU
+  path: height.FarmCPU.csv
+  p_threshold: 5.0e-8
+gff: reference.gff3
+genome: genome.fa
+db_config: dbs.tsv
+self_db: Self
+domains: domains.tsv
+vcf: variants.vcf
+gap: 100000
+flank: 100000
+region_flank: 100000
 ```
 
-- 默认 gap=100 kb 聚类、±100 kb 窗口取候选基因；窗口是**操作窗口**，不得表述为实测 LD 区块。
-- 产出：`*_dual_model_leads.csv`（每独立位点一行 lead SNP）、`*_window_genes.csv`。
+关联表必须含 SNP/ID、CHROM/CHR、POS/BP、REF、ALT、Effect/BETA、P 值列。`ann.vcf` 的变异后果自动解析仍为待实现。
 
-### Stage 2 — CDS 提取与蛋白翻译
+## 已实现能力
+
+- 双模型显著性过滤、等位基因交集、效应方向检查、主模型 lead 与跨模型支持。
+- GFF 固定窗口、直接注释基因、基因体重叠三类候选证据。
+- 严格 CDS/蛋白 QC；失败默认阻断候选提取。
+- 多库 BLASTp、Top-hit 汇总和 self-BLAST 同源候选。
+- TE/repeat 降级、激素回复门控、Priority A-D 与 Evidence L0-L4。
+- 二等位 VCF 剂量 LD r² 热图；二倍体和更高倍性 GT 均可按剂量计算。
+- `report.html`、`report.md`、标准化 TSV 和独立 PDF 图。
+- full 模式输出 Q-Q；truncated 模式禁用 Q-Q/λ。
+- 运行清单包含输入 SHA-256、配置快照、软件版本、命令、随机种子和参考版本。
+
+## 待实现
+
+- statistical fine-mapping、PIP/credible set、条件分析。
+- 表达、eQTL、单倍型和独立群体复现数据适配器。
+- Pfam/InterPro/hmmscan 自动结构域扫描；当前需要用户提供 `domains.tsv`。
+- reciprocal best hit、共线性或基因树支持的直系同源推断。
+- CNV/真实同源拷贝数估计。
+- MLMM/FarmCPU/BLINK 的直接执行；当前仅支持其结果作为下游输入。
+- `ann.vcf` 的 ANN/HGVS 自动解析。
+- 上游 PLINK2/GEMMA 实机数据验证；当前只有字段适配与构造输入集成测试。
+
+## 运行
 
 ```bash
-python scripts/extract_cds_protein.py --gff <reference>.gff.gz --genome <genome>.fasta.gz \
-    --genes <gene1> <gene2> ... --outdir out/annotation/ --proteome
+pip install -r requirements.txt
+python scripts/run_pipeline.py --config config.yaml --workdir out/run1
 ```
 
-- `--proteome` 生成全蛋白组（每基因最长转录本），供 Stage 3 自比对盘点同源拷贝。
-- **必须检查 extraction_report.tsv 四项 sanity**：ATG 起始、终止子、无内部终止子、长度 %3==0；任一失败先查链向/坐标系，不得直接进 BLAST。
-
-### Stage 3 — 多库 BLASTp 同源注释
-
-先建 `dbs.tsv`（`名称<TAB>蛋白fasta路径`），推荐分层：同种参考基因组 → 近缘种 → 模式植物 → 自蛋白组（拷贝盘点）。
-
-```bash
-python scripts/run_blastp.py --query out/annotation/candidate_proteins.fasta \
-    --dbs dbs.tsv --outdir out/annotation/
-python scripts/summarize_annotation.py --blastdir out/annotation/blast_out \
-    --outdir out/annotation/ --self-db <自蛋白组库名>
-```
-
-- 拟南芥等模式植物 Top hit 的功能描述用 WebSearch（TAIR/Phytozome/STRING）补全，本地 fasta 头通常无注释。
-- Pfam/CDD 结构域扫描优先 hmmscan；不可用时继承直系同源的 InterPro 注释并在报告中注明。
-
-### Stage 4 — 判读与实验建议
-
-按下表给出逐基因结论，写入汇总报告：
-
-| 证据模式 | 判定 | 建议 |
-|:--|:--|:--|
-| 近缘种 identity ≥85% + 全长覆盖 + 单基因家族 | 可信直系同源 | 可克隆；按注释通路设计验证 |
-| identity 30–60% + 命中碎片化（多个不同基因各覆盖一部分） | 疑似 TE/重复衍生 | **不克隆**，降级为 KASP 位点验证 |
-| PFAM/InterPro 含 RVT_*/rve/Retrotrans_gag | TE 关联 | **不克隆**；统计信号再强也不等于可克隆 |
-| 自比对显示 1:4（四倍体）完整拷贝 | 拷贝完整 | 克隆引物必须压在拷贝判别 SNP 上，阳性克隆测序确认 |
-| 自比对拷贝缺失/截短 | CNV 或注释缺口 | 先查拷贝数，再定策略 |
-| 注释为激素通路组分（如 DELLA→GA） | 通路明确 | 可设计激素回复（过表达→表型→外施激素回复） |
-| 注释为非激素类型（代谢酶/转运蛋白/未知） | 通路不明 | **禁止默认激素回复**；改做该基因类型对应的分子指标 |
-
-## 数据边界（必须遵守，详见 references/data_boundary.md）
-
-- 只有 P 值截断信号（如 P<1e-5）时：不可重跑 GWAS、λgc 不可估、LD 仅限显著位点间、双模型显著 ≠ 独立 QTL ≠ 因果基因。
-- 候选基因的坐标、结构、引物设计必须使用**同一参考基因组版本**，不得混用两个版本坐标系。
-
-## 参考文件
-
-- `references/workflow.md` — 完整工作流细节 + 株高性状实测案例（已脱敏，含数值模式与判读示范）
-- `references/data_boundary.md` — 截断数据的解释边界与汇报口径
-- `references/pitfalls.md` — 多倍体克隆、TE 判别、工具环境等已验证的坑
+主输出：`out/run1/report/report.html`、`report.md`、`tables/` 和 `figures/`。运行审计：`out/run1/run_manifest.json`。

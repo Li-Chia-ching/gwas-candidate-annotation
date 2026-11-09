@@ -1,0 +1,124 @@
+# =============================================================================
+# plant-wgs-gwas · 全局配置模板
+# 复制本文件到工作目录后再修改；不要在模板原件上改。
+# 换研究方向时，绝大多数情况只需改 phenotypes 段；换物种/群体再加改其余段。
+# 所有路径可写绝对路径，或以本配置文件所在目录为基准的相对路径。
+# =============================================================================
+
+project:
+  name: "rice_flowering_gwas"          # 本次分析代号，用于输出文件命名
+  owner: "课题组/姓名"                  # 责任人
+  note: "示例配置：水稻开花时间 GWAS，多环境 BLUP 表型"
+
+species:
+  name: "Oryza sativa"
+  reference_genome: "IRGSP-1.0"        # 必须与 VCF、GFF、已知 QTL 坐标一致
+  chr_count: 12
+  mating_system: "selfing"             # selfing / outcrossing / mixed，影响 HWE 与 LD 判断
+  ld_decay_kb: 200                     # 该物种大致 LD 衰减距离，用于定候选区间宽度与 pruning 窗口
+
+population:
+  type: "natural_panel"                # natural_panel / RIL / NAM / MAGIC / F2 / inbred_panel
+  n_samples_expected: 320
+  mean_depth: 15                       # WGS 平均测序深度
+  structure_expectation: "strong"      # weak / moderate / strong，决定默认模型
+  known_subpopulations: ["indica", "japonica", "admixed"]
+
+paths:
+  workdir: "./gwas_run"                # 所有输出根目录
+  vcf: "./data/genotypes.vcf.gz"       # 原始 VCF（保留不动，记录 MD5）
+  phenotype_dir: "./data/phenotypes"   # 表型文件所在目录
+  gff: "./annotation/reference.gff3"   # 基因注释（S7 用）
+  known_qtl: "./annotation/known_qtl.bed"  # 已知 QTL/基因，作为阳性对照
+
+genotype:
+  vcf: "./data/genotypes.vcf.gz"
+  id_rule: "IID_from_VCF"              # VCF 样本名如何对应表型 IID
+  keep_biallelic_snp: true             # GWAS 阶段先只用二等位 SNP
+  min_dp: 8                            # WGS 特有：位点/基因型最小深度
+  min_gq: 20                           # WGS 特有：最小基因型质量
+  allele_balance: [0.25, 0.75]         # 杂合基因型等位基因平衡范围
+  allow_extra_chr: true                # 植物常有 scaffold / 叶绿体 / 线粒体 contig
+
+qc:
+  mind: 0.05                           # 个体最大基因型缺失率（书中 p220 默认 0.05）
+  geno: 0.05                           # 标记最大缺失率 / call rate > 95%（书中 p98、p224）
+  maf: 0.05                           # N<300 建议 0.05；N>1000 可放宽 0.01（书中 p225）
+  hwe_enabled: false                   # ★ 自交物种默认关闭；异交/自然群体可开
+  hwe_p: 1.0e-6                       # 开启时的阈值（书中 p225 数量性状 p<1e-6）
+  het_sd: 3                            # 杂合度离群 ±N 个 SD（书中 p220–221）
+  ibs_cutoff: 0.1875                   # 重复/近亲剔除阈值（书中 p223）
+  check_batch_diff_missing: true       # 按测序批次分层检查差异缺失（书中 p224）
+  remove_duplicates: true
+
+ld_pruning:
+  window: 50                           # --indep-pairwise 窗口（SNP 数）；按物种 LD 衰减调
+  step: 5
+  r2: 0.2                              # 常用 r²=0.2（书中 p241–243）
+
+structure:
+  n_pc: 10                             # 常用 10 或 20（书中 p245）；必须结合实际 PCA 图调整
+  pc_selection: "scree_plus_ancestry_correlation"  # 或 tracy_widom / cv
+  kinship_method: "gemma"              # gemma / plink2_king / gcta_grm
+  grm_cutoff: 0.025                    # 去除过近个体对（书中 p256）
+  covariates: ["batch", "location"]    # 除 PC 外的固定效应协变量
+
+# ★ 换方向主要改这里：每个表型一项，可无限追加
+phenotypes:
+  - name: "flowering_days"
+    file: "./data/phenotypes/flowering_blup.tsv"
+    column: "BLUP_days"
+    type: "quantitative"               # quantitative / binary / ordinal / count
+    transform: "none"                  # none / log / sqrt / log1p / boxcox / quantile_normal
+    blup: true                         # 是否已为多环境校正后的遗传值
+    covariates: ["sowing_date", "vernalization"]
+    model: "LMM"                       # GLM / LMM / MLMM / FarmCPU / BLINK
+    note: "多环境 BLUP，光温敏感，需报告 G×E"
+  - name: "plant_height"
+    file: "./data/phenotypes/height_blup.tsv"
+    column: "BLUP_cm"
+    type: "quantitative"
+    transform: "none"
+    blup: true
+    covariates: ["sowing_date", "density"]
+    model: "LMM"
+    note: "近正态，可顺便做阳性对照（已知株高基因）"
+  - name: "branch_number"
+    file: "./data/phenotypes/branch_blup.tsv"
+    column: "BLUP_count"
+    type: "count"
+    transform: "sqrt"
+    blup: true
+    covariates: ["density", "nitrogen"]
+    model: "LMM"
+    note: "计数型右偏，sqrt 变换；零膨胀严重时改用计数模型"
+
+model:
+  default: "LMM"                       # 植物场景默认混合线性模型（书中 p248）
+  additive_only: true                  # 默认加性编码；需要时再检验显性/隐性
+  report_effect_size: true             # 必须同时报效应量与 p 值（书中 p101）
+  positive_control: "known_qtl"        # 用已知 QTL/基因做复现检查
+
+threshold:
+  method: "bonferroni_meff"            # fixed_5e-8 / bonferroni_meff / fdr / permutation
+  value: 5.0e-8                        # method=fixed_5e-8 时生效（书中 p101–102）
+  suggestive: 1.0e-5
+  fdr_q: 0.05
+  meff_source: "ld_pruned_marker_count"  # 有效独立检验数的来源
+
+diagnostics:
+  lambda_warn: 1.2                     # λ>1.2 提示残余结构（书中 p340，案例 λ=1.239）
+  require_qq_plot: true
+  require_manhattan_plot: true
+
+annotation:
+  candidate_window_kb: 200             # 建议 = ld_decay_kb，按物种调整
+  use_known_qtl_overlap: true
+  go_kegg: true
+
+software:
+  plink: "plink2"
+  gemma: "gemma"
+  gcta: "gcta64"
+  python: "python3"
+  seed: 20261109

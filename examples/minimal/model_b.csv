@@ -1,0 +1,4 @@
+SNP,CHROM,POS,P.value,REF,ALT,Effect
+s1,chr1,10,2e-8,A,G,0.4
+s2,chr1,20,3e-8,C,T,0.5
+s3,chr1,500,4e-8,G,A,0.2

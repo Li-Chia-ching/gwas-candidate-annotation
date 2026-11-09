@@ -1,0 +1,22 @@
+scenario: minimal_full
+base_dir: .
+trait: plant_height
+data_mode: full
+reference_build: construct-v1
+random_seed: 20261109
+model_a:
+  name: MLM
+  path: model_a.csv
+  p_threshold: 1.0e-5
+model_b:
+  name: FarmCPU
+  path: model_b.csv
+  p_threshold: 1.0e-5
+gff: ref.gff
+genome: genome.fa
+db_config: dbs.tsv
+domains: domains.tsv
+vcf: variants.vcf
+gap: 20
+flank: 50
+region_flank: 30

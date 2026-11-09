@@ -1,0 +1,13 @@
+﻿# 字段说明（正式表请删掉所有以 # 开头的行）
+# IID          样本唯一编号，必须与 VCF 中样本名一致（PLINK .fam 第 2 列）
+# FID          家系/群体编号；无家系时与 IID 相同
+# population   亚群/生态型标签，用于检查 PCA 是否反映真实结构
+# batch        测序批次，必须记录：批次常是差异缺失与假关联的来源
+# location     田间地点/环境
+# year         年份
+# depth        平均测序深度
+# note         备注（材料来源、异常记录）
+IID	FID	population	batch	location	year	depth	note
+S001	S001	indica	B1	E1	2024	15.2	-
+S002	S002	japonica	B1	E1	2024	14.8	叶片取样偏老
+S003	S003	admixed	B2	E2	2024	16.1	-

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gwas-candidate-annotation"
+version = "3.0.0"
+description = "GWAS candidate-gene evidence annotation and reporting"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+authors = [{name = "Jiaqing Li"}]
+dependencies = [
+  "numpy==2.5.4",
+  "matplotlib==3.11.2",
+  "PyYAML==6.0.3",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
