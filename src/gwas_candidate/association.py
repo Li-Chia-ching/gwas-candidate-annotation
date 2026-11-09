@@ -4,8 +4,10 @@ import csv
 import gzip
 import math
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
+from .ld import pairwise_r2, read_vcf_region
 from .schemas import LocusRecord, VariantRecord
 
 
@@ -156,4 +158,127 @@ def _cluster_record(keys, signals_a, signals_b, model_a, model_b, trait, referen
         variants=variants,
         reference_build=reference_build,
         data_mode=data_mode,
+    )
+
+
+def _chrom_sort_key(value):
+    return (not value.isdigit(), int(value) if value.isdigit() else value)
+
+
+def _region_dosages(vcf_path, chrom, start, end):
+    """Dosage lookup by position; retries with chr-prefix toggled on naming mismatch."""
+    samples, variants = read_vcf_region(vcf_path, chrom, start, end)
+    if not variants:
+        alt = chrom[3:] if chrom.lower().startswith("chr") else f"chr{chrom}"
+        if alt != chrom:
+            samples, variants = read_vcf_region(vcf_path, alt, start, end)
+    return {pos: dosages for pos, dosages in variants}
+
+
+def _lead_r2(dosage_by_pos, lead_a, lead_b):
+    x = dosage_by_pos.get(lead_a.pos)
+    y = dosage_by_pos.get(lead_b.pos)
+    if x is None or y is None:
+        return None
+    value = pairwise_r2(x, y)
+    return None if math.isnan(value) else value
+
+
+def _merged_record(entries, indices, evaluated):
+    members = [entries[i] for i in indices]
+    if len(members) == 1:
+        locus = members[0]
+        status = "ld_evaluated_not_merged" if evaluated[indices[0]] else "not_evaluated"
+        return replace(locus, ld_locus_status=status)
+    variants = sorted((v for locus in members for v in locus.variants), key=lambda v: v.pos)
+    lead = min(variants, key=lambda v: v.p)
+    support = tuple(dict.fromkeys(m for locus in members for m in locus.support_models))
+    return LocusRecord(
+        trait=members[0].trait,
+        chrom=members[0].chrom,
+        start=min(locus.start for locus in members),
+        end=max(locus.end for locus in members),
+        lead=lead,
+        lead_model=lead.model,
+        support_models=support,
+        variants=tuple(variants),
+        reference_build=members[0].reference_build,
+        data_mode=members[0].data_mode,
+        cluster_type="ld_merged_cluster",
+        ld_locus_status="merged_by_ld",
+        merged_by_ld=True,
+        merged_cluster_count=len(members),
+    )
+
+
+def merge_clusters_by_ld(loci, vcf_path, r2_threshold=0.5):
+    """Merge adjacent distance clusters whose lead SNPs exceed an LD r2 threshold.
+
+    Single-linkage over adjacent clusters on the same chromosome: when the
+    lead-lead dosage r2 is above ``r2_threshold``, both clusters join one LD
+    locus and the merged locus takes the minimum-P variant as its nominal lead.
+    Evaluation is iterative, so a merged locus is re-tested against its next
+    neighbour with the recomputed lead. The lead SNP is a nominal lead only;
+    no conditional analysis of multiple independent signals is performed.
+
+    Loci whose lead genotypes are absent from the VCF (or all loci when
+    ``vcf_path`` is None) are returned unchanged with ``ld_locus_status``
+    ``not_evaluated``.
+    """
+    if not (0 < r2_threshold <= 1):
+        raise ValueError("r2_threshold must be within (0, 1]")
+    entries = tuple(loci)
+    if len(entries) < 2:
+        return entries
+    if vcf_path is None:
+        return entries
+    by_chrom = defaultdict(list)
+    for locus in entries:
+        by_chrom[locus.chrom].append(locus)
+    result = []
+    for chrom in sorted(by_chrom, key=_chrom_sort_key):
+        group = sorted(by_chrom[chrom], key=lambda l: (l.start, l.end, l.lead.pos))
+        dosage_by_pos = _region_dosages(
+            vcf_path, chrom, min(l.start for l in group), max(l.end for l in group)
+        )
+        blocks = [[i] for i in range(len(group))]
+        evaluated = [False] * len(group)
+        changed = True
+        while changed and len(blocks) > 1:
+            changed = False
+            merged_blocks = []
+            i = 0
+            while i < len(blocks):
+                if i + 1 < len(blocks):
+                    left, right = blocks[i], blocks[i + 1]
+                    lead_left = min((group[j].lead for j in left), key=lambda v: v.p)
+                    lead_right = min((group[j].lead for j in right), key=lambda v: v.p)
+                    r2 = _lead_r2(dosage_by_pos, lead_left, lead_right)
+                    if r2 is not None:
+                        for j in left + right:
+                            evaluated[j] = True
+                    if r2 is not None and r2 > r2_threshold:
+                        merged_blocks.append(left + right)
+                        changed = True
+                        i += 2
+                        continue
+                merged_blocks.append(blocks[i])
+                i += 1
+            blocks = merged_blocks
+        result.extend(_merged_record(group, block, evaluated) for block in blocks)
+    return tuple(result)
+
+
+def rank_loci(loci):
+    """Rank loci by nominal lead P (ascending); rank 1 is the priority peak.
+
+    Returns loci sorted by rank with ``locus_rank`` and ``priority_peak``
+    assigned. Ties break on chromosome, start, then end for determinism.
+    """
+    ordered = sorted(
+        loci, key=lambda l: (l.lead.p, _chrom_sort_key(l.chrom), l.start, l.end)
+    )
+    return tuple(
+        replace(locus, locus_rank=rank, priority_peak=(rank == 1))
+        for rank, locus in enumerate(ordered, 1)
     )

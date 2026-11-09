@@ -244,16 +244,19 @@ def _write_tables(outdir, loci, candidates, hits, assessments):
     with (tables / "loci.tsv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
         writer.writerow([
-            "locus_id", "trait", "chrom", "start", "end", "lead_snp", "lead_pos",
-            "lead_model", "support_models", "cluster_type", "ld_locus_status", "data_mode",
-            "reference_build",
+            "locus_id", "locus_rank", "priority_peak", "trait", "chrom", "start", "end",
+            "lead_snp", "lead_pos", "lead_p", "lead_model", "support_models",
+            "cluster_type", "ld_locus_status", "merged_by_ld", "merged_cluster_count",
+            "data_mode", "reference_build",
         ])
         for locus in loci:
             writer.writerow([
-                _locus_id(locus), locus.trait, locus.chrom, locus.start, locus.end,
-                locus.lead.snp, locus.lead.pos, locus.lead_model,
+                _locus_id(locus), locus.locus_rank if locus.locus_rank is not None else "",
+                int(locus.priority_peak), locus.trait, locus.chrom, locus.start, locus.end,
+                locus.lead.snp, locus.lead.pos, f"{locus.lead.p:.6g}", locus.lead_model,
                 ";".join(locus.support_models), locus.cluster_type,
-                locus.ld_locus_status, locus.data_mode, locus.reference_build,
+                locus.ld_locus_status, int(locus.merged_by_ld), locus.merged_cluster_count,
+                locus.data_mode, locus.reference_build,
             ])
     with (tables / "candidate_genes.tsv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -353,6 +356,18 @@ def generate_report(
             a.hormone_rescue_gate, a.recommendation, ";".join(a.downgrade_reasons) or "none",
         ])
 
+    locus_rows = []
+    for locus in loci:
+        locus_rows.append([
+            locus.locus_rank if locus.locus_rank is not None else "-",
+            _locus_id(locus),
+            f"{locus.lead.snp} ({locus.lead.pos})",
+            f"{locus.lead.p:.3g}",
+            locus.cluster_type,
+            locus.ld_locus_status,
+            "yes" if locus.merged_by_ld else "no",
+        ])
+
     md = outdir / "report.md"
     html_path = outdir / "report.html"
     figure_lines = [f"- figures/{manhattan.name}"]
@@ -370,10 +385,21 @@ def generate_report(
         "",
         "V3 reports candidate Priority A/B/C/D and Evidence L0-L4 only; it does not claim causal-gene confirmation.",
         "",
+        "Lead SNPs are nominal leads (minimum P within each locus); conditional analysis for multiple independent signals within one locus is not implemented.",
+        "",
         f"- Data mode: `{data_mode}`",
         f"- Reference genome: `{reference_build}`",
         f"- Threshold: `{threshold:g}`",
         f"- Loci: {len(loci)}; candidate evidence rows: {len(candidates)}",
+        "",
+        "## Loci (ranked by nominal lead P)",
+        "",
+        "| Rank | Locus | Lead SNP (pos) | Lead P | Cluster type | LD locus status | Merged by LD |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+        *[
+            "| " + " | ".join(str(x).replace("|", "/") for x in row) + " |"
+            for row in locus_rows
+        ],
         "",
         "## Figures",
         *figure_lines,
@@ -400,6 +426,10 @@ def generate_report(
         "<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in row) + "</tr>"
         for row in assessment_rows
     )
+    locus_cards = "".join(
+        "<tr>" + "".join(f"<td>{html.escape(str(value))}</td>" for value in row) + "</tr>"
+        for row in locus_rows
+    )
     fig_links = "".join(
         f"<li><a href='figures/{html.escape(path.name)}'>{html.escape(path.name)}</a></li>"
         for path in [manhattan] + ([qq] if qq else []) + regional_paths + ld_paths + [evidence_pdf] + list(domain_paths.values())
@@ -420,12 +450,18 @@ th {{ background: #f4f6f8; }}
 <body>
 <h1>Candidate-gene report: {html.escape(trait)}</h1>
 <p>V3 reports candidate <strong>Priority A/B/C/D</strong> and <strong>Evidence L0-L4</strong> only; it does not claim causal-gene confirmation.</p>
+<p>Lead SNPs are <strong>nominal leads</strong> (minimum P within each locus); conditional analysis for multiple independent signals within one locus is not implemented.</p>
 <ul>
 <li>Data mode: <span class="code">{data_mode}</span></li>
 <li>Reference genome: <span class="code">{html.escape(reference_build)}</span></li>
 <li>Threshold: <span class="code">{threshold:g}</span></li>
 <li>Loci: {len(loci)}; candidate evidence rows: {len(candidates)}</li>
 </ul>
+<h2>Loci (ranked by nominal lead P)</h2>
+<table>
+<thead><tr><th>Rank</th><th>Locus</th><th>Lead SNP (pos)</th><th>Lead P</th><th>Cluster type</th><th>LD locus status</th><th>Merged by LD</th></tr></thead>
+<tbody>{locus_cards}</tbody>
+</table>
 <h2>Figures</h2>
 <ul>{fig_links}</ul>
 <h2>Candidate assessments</h2>

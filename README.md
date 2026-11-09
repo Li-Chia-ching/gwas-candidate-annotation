@@ -30,7 +30,7 @@ python -m unittest discover -s tests -v
 make test
 ```
 
-当前验证：14 项 P0 回归、10 项迁移回归、2 项报告测试、6 类端到端构造数据，共 32/32 通过。
+当前验证：14 项 P0 回归、10 项迁移回归、2 项报告测试、6 类端到端构造数据、12 项 v3.1 LD 合并/排序回归，共 44/44 通过。
 
 ## 已实现能力
 
@@ -38,6 +38,8 @@ make test
 - REF/ALT、多等位冲突、效应方向和参考版本硬检查。
 - 主模型 lead SNP 与跨模型支持分离。
 - 距离聚类显式标记为 `distance_cluster`，不冒充 LD 位点。
+- lead-lead 剂量 LD r² 单链合并（`merge_clusters_by_ld`）：配置 `ld_merge: true`（需 `vcf`）与 `ld_merge_r2`（默认 0.5）开启，合并后位点标记 `ld_merged_cluster`/`merged_by_ld`。
+- 位点排序（`rank_loci`）：每次运行按 nominal lead P 升序输出 `locus_rank`，rank 1 标记 `priority_peak`。
 - GFF 固定窗口、直接注释基因和基因体重叠三类候选证据。
 - 严格 CDS/蛋白 QC，失败阻断候选提取。
 - 多库 BLASTp、Top-hit 同源候选和 self-BLAST 同源拷贝候选。
@@ -63,7 +65,7 @@ PLINK2/GEMMA 上游实机验证是外部依赖，未在本仓库 CI 覆盖；当
 
 ## 输出语言约束
 
-BLAST Top hit 只写 `homology_candidate`。self-BLAST 结果只写 `homoeolog_candidate`。禁止写“直系同源”“真实拷贝数”“确认因果基因”。
+BLAST Top hit 只写 `homology_candidate`。self-BLAST 结果只写 `homoeolog_candidate`。lead SNP 一律表述为 nominal lead（位点内最小 P），位点内多独立信号的条件分析（COJO/stepwise）未实现，报告中显式标注。禁止写“直系同源”“真实拷贝数”“确认因果基因”。
 
 ## 许可与第三方
 

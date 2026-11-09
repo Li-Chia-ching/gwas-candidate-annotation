@@ -32,6 +32,10 @@ class LocusRecord:
     data_mode: str
     cluster_type: str = "distance_cluster"
     ld_locus_status: str = "not_evaluated"
+    merged_by_ld: bool = False
+    merged_cluster_count: int = 1
+    locus_rank: int | None = None
+    priority_peak: bool = False
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@ import csv
 from dataclasses import replace
 from pathlib import Path
 
-from .association import build_dual_model_clusters, read_model_signals
+from .association import build_dual_model_clusters, merge_clusters_by_ld, rank_loci, read_model_signals
 from .candidates import candidate_genes_for_loci, load_gff_genes
 from .gates import assess_candidate
 from .homology import parse_blast_hits, run_multi_db_blastp, top_homology_candidates
@@ -44,6 +44,8 @@ def run_candidate_pipeline(config, workdir):
     data_mode = config["data_mode"]
     reference_build = config["reference_build"]
     commands = []
+    if config.get("ld_merge") and not config.get("vcf"):
+        raise ValueError("ld_merge requires a VCF input for lead-lead LD evaluation")
 
     model_a = config["model_a"]
     model_b = config["model_b"]
@@ -63,6 +65,13 @@ def run_candidate_pipeline(config, workdir):
         signals_a, signals_b, model_a["name"], model_b["name"], trait,
         int(config.get("gap", 100000)), reference_build, data_mode,
     )
+    vcf_path = _resolve(base, config["vcf"]) if config.get("vcf") else None
+    if config.get("ld_merge"):
+        r2_threshold = float(config.get("ld_merge_r2", 0.5))
+        loci = merge_clusters_by_ld(loci, vcf_path, r2_threshold)
+        commands.append(f"merge_clusters_by_ld(r2_threshold={r2_threshold:g})")
+    loci = rank_loci(loci)
+    commands.append("rank_loci(nominal lead P ascending)")
 
     gff = _resolve(base, config["gff"])
     genome = _resolve(base, config["genome"])
@@ -126,7 +135,7 @@ def run_candidate_pipeline(config, workdir):
         threshold=float(model_a["p_threshold"]),
         data_mode=data_mode,
         reference_build=reference_build,
-        vcf_path=_resolve(base, config["vcf"]) if config.get("vcf") else None,
+        vcf_path=vcf_path,
         region_flank=int(config.get("region_flank", config.get("flank", 100000))),
     )
     inputs = [signals_a_path, signals_b_path, gff, genome]
